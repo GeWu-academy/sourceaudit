@@ -14,8 +14,8 @@ jobs:
       matrix:
         node: ['18', '20', '22']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node }}
       - name: 跑语料回归
@@ -28,8 +28,8 @@ jobs:
     name: 引擎与元信息一致
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: 校验 ENGINE.json 与引擎文件匹配
