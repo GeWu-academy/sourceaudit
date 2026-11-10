@@ -1,0 +1,15 @@
+{
+  "source_package": "LingOps_v0.2_darwin_arm64",
+  "source_engine": "frontend/dist/assets_v2/lp-ext/awdpplus.js",
+  "source_sha256": "e46ac1879f5d7fcf438a4d9c673622d442b11130129b5adfaa63ef8cbecca791",
+  "engine_version": "1.3.9",
+  "rules": {
+    "sources": 66,
+    "sinks": 212,
+    "patterns": 53,
+    "total": 331
+  },
+  "categories": 26,
+  "languages": 8,
+  "synced_at": "2026-11-10T03:38:12.335Z"
+}

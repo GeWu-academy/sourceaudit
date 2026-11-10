@@ -1,0 +1,37 @@
+{
+  "name": "sourceaudit",
+  "version": "1.0.0",
+  "description": "源码审计 CLI：跨行污点分析，331 条规则 / 26 类漏洞 / 8 种语言，支持目录、单文件与 ZIP（AWD/AWDP 场景适用）",
+  "keywords": [
+    "awd",
+    "awdp",
+    "ctf",
+    "sast",
+    "taint-analysis",
+    "security",
+    "code-audit"
+  ],
+  "license": "MIT",
+  "bin": {
+    "sourceaudit": "bin/sourceaudit.js"
+  },
+  "files": [
+    "bin/",
+    "lib/",
+    "engine/",
+    "scripts/",
+    "test/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/run.js",
+    "test:verbose": "node test/run.js -v",
+    "sync-engine": "node scripts/sync-engine.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
