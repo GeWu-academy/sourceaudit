@@ -1,5 +1,9 @@
 # sourceaudit
 
+[![CI](https://github.com/GeWu-academy/sourceaudit/actions/workflows/ci.yml/badge.svg)](https://github.com/GeWu-academy/sourceaudit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)
+
 > 源码审计，逐行溯源。
 
 **源码漏洞审计命令行工具。** 给它一个目录、一个文件、或者一个 zip，它会告诉你：**哪一行有问题、这个变量从哪来、该怎么修。**
@@ -102,31 +106,40 @@ sink（system / mysqli_query / include / unserialize / Runtime.exec ...）→ �
 
 ## 三、安装
 
-### 方式 1：直接跑，不安装
+### 方式 1：克隆即用（推荐）
 
 ```bash
-git clone <本仓库>
+git clone https://github.com/GeWu-academy/sourceaudit.git
 cd sourceaudit
+chmod +x bin/sourceaudit.js
 ./bin/sourceaudit.js ./your-source
 ```
 
-`bin/sourceaudit.js` 有 shebang，`chmod +x` 后可直接执行。也可以 `node bin/sourceaudit.js ...`。
+`bin/sourceaudit.js` 带 shebang，`chmod +x` 后可直接执行；也可以 `node bin/sourceaudit.js ...`。
+不需要 `npm install`——本项目零依赖。
 
 ### 方式 2：全局命令
 
 ```bash
+git clone https://github.com/GeWu-academy/sourceaudit.git
+cd sourceaudit
 npm install -g .
-sourceaudit ./your-source
+sourceaudit ./your-source          # 任意目录下可用
 ```
 
-> macOS 上 `npm install -g` 若报权限错误（全局目录属 root），加 `sudo`，或者改用：
+> macOS 上 `npm install -g` 若报 `operation was rejected by your operating system`（全局目录属 root），
+> 二选一：命令前加 `sudo`，或者
 > `npm config set prefix ~/.npm-global` 再把 `~/.npm-global/bin` 加进 `PATH`。
 
-### 方式 3：npx（不污染全局）
+### 方式 3：装进某个项目，只在该项目里用
 
 ```bash
-npx /path/to/sourceaudit ./your-source
+cd /path/to/your-project
+npm install --save-dev /path/to/sourceaudit
+npx sourceaudit ./src -s high
 ```
+
+适合给单个仓库加审计卡口（配合 `package.json` 的 `scripts.audit`）。
 
 ### 环境要求
 
@@ -491,6 +504,8 @@ sourceaudit/
 
 引擎与规则来自 [LingOps](https://github.com/GeWu-academy/LingOps-Enhanced)（原作者 zhanglinglingc，
 扩展由 GeWu-academy 维护）——没有那个干净利落的深度审计实现，就没有这个命令行壳。
+
+本项目由 GeWu-academy 维护：[github.com/GeWu-academy/sourceaudit](https://github.com/GeWu-academy/sourceaudit)。
 
 ### 许可
 

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: 回归自测 (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: 跑语料回归
+        run: npm test
+      # 自扫 bin/lib/scripts（test/corpus 是故意埋洞的样本，engine 是规则表本身，都不扫）
+      - name: 自扫本仓库源码
+        run: node bin/sourceaudit.js bin lib scripts --no-color --fail-on none
+
+  engine:
+    name: 引擎与元信息一致
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 校验 ENGINE.json 与引擎文件匹配
+        run: |
+          node -e '
+            const fs = require("fs"), crypto = require("crypto");
+            const meta = JSON.parse(fs.readFileSync("engine/ENGINE.json", "utf8"));
+            const buf = fs.readFileSync("engine/awdpplus.js");
+            const sha = crypto.createHash("sha256").update(buf).digest("hex");
+            if (sha !== meta.source_sha256) {
+              console.error("引擎文件与 ENGINE.json 指纹不一致：");
+              console.error("  ENGINE.json:", meta.source_sha256);
+              console.error("  实际文件  :", sha);
+              process.exit(1);
+            }
+            console.log("引擎指纹一致:", sha.slice(0, 12), "规则", meta.rules.total, "条");
+          '
+      - name: 规则统计
+        run: node bin/sourceaudit.js --list-rules
