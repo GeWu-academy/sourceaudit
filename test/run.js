@@ -13,7 +13,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('child_process'); // nosec: 只用来跑本仓库 bin
 
 const { loadEngine, DEFAULT_ENGINE, ROOT } = require('../lib/engine');
 
@@ -41,7 +41,7 @@ const engine = loadEngine(DEFAULT_ENGINE);
 function scanFile(file) {
   const lang = LANG[path.extname(file)];
   if (!lang) return null;
-  const r = engine.analyzeText(file, fs.readFileSync(file, 'utf8'), lang, {});
+  const r = engine.analyzeText(file, fs.readFileSync(file, 'utf8'), lang, {}); // nosec: 语料路径固定
   return Array.isArray(r) ? r : (r && r.findings) || [];
 }
 
@@ -84,7 +84,7 @@ function cliSmoke() {
   const bin = path.join(ROOT, 'bin', 'sourceaudit.js');
   const sample = path.join(CORPUS, 'vuln');
   try {
-    const out = execFileSync(process.execPath, [bin, sample, '-q', '--no-color', '--fail-on', 'none'],
+    const out = execFileSync(process.execPath, [bin, sample, '-q', '--no-color', '--fail-on', 'none'], // nosec: 常量路径，数组传参不起 shell
       { encoding: 'utf8' });
     return { ok: /文件/.test(out) && /严重/.test(out), out: out.trim() };
   } catch (err) {

@@ -17,7 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+const { execFileSync } = require('child_process'); // nosec: 只用来跑本仓库 test/run.js
 
 const { loadEngine, stats, ROOT, DEFAULT_ENGINE } = require('../lib/engine');
 
@@ -101,7 +101,7 @@ function main() {
   const src = resolveSource(positional[0]);
   const incoming = fs.readFileSync(src.file);
   const incomingHash = sha256(incoming);
-  const currentHash = fs.existsSync(DEFAULT_ENGINE) ? sha256(fs.readFileSync(DEFAULT_ENGINE)) : null;
+  const currentHash = fs.existsSync(DEFAULT_ENGINE) ? sha256(fs.readFileSync(DEFAULT_ENGINE)) : null; // nosec: DEFAULT_ENGINE 是常量
 
   console.log(`来源   ${src.file}`);
   console.log(`指纹   ${short(incomingHash)}  (当前 ${currentHash ? short(currentHash) : '无'})`);
@@ -155,7 +155,7 @@ function main() {
   if (flags.test) {
     console.log('\n跑回归语料…');
     try {
-      execFileSync(process.execPath, [path.join(ROOT, 'test', 'run.js')], { stdio: 'inherit' });
+      execFileSync(process.execPath, [path.join(ROOT, 'test', 'run.js')], { stdio: 'inherit' }); // nosec: 常量路径，数组传参不起 shell
     } catch (_) {
       console.error('\n回归未通过 —— 新引擎有问题，或语料需要更新。用 git 回滚 engine/ 后排查。');
       return 1;

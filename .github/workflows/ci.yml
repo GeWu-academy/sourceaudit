@@ -20,9 +20,10 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: 跑语料回归
         run: npm test
-      # 自扫 bin/lib/scripts（test/corpus 是故意埋洞的样本，engine 是规则表本身，都不扫）
+      # 自扫 bin/lib/scripts/test（corpus 是故意埋洞的样本，engine 是规则表本身，都不扫）
+      # 期望 0 命中：设计使然的点已标 nosec，新增命中说明真有新问题
       - name: 自扫本仓库源码
-        run: node bin/sourceaudit.js bin lib scripts --no-color --fail-on none
+        run: node bin/sourceaudit.js bin lib scripts test/run.js --no-color --fail-on low
 
   engine:
     name: 引擎与元信息一致

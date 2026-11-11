@@ -93,11 +93,18 @@ function parseArgs(argv) {
 
 /* ------------------------------------------------------------------ 路径过滤 */
 
+const GLOB_MAX = 256;
+
 function globToRe(g) {
+  if (g.length > GLOB_MAX) throw new Error(`--exclude 通配符过长（${g.length} > ${GLOB_MAX}）：${g.slice(0, 40)}…`);
   const s = g.replace(/\\/g, '/').replace(/[.+^${}()|[\]\\]/g, '\\$&')
     .replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*')
     .replace(/\?/g, '.').replace(/\u0000/g, '.*');
-  return new RegExp(`^${s}$`);
+  try {
+    return new RegExp(`^${s}$`); // nosec: 模式来自使用者的 --exclude，且已限长
+  } catch (e) {
+    throw new Error(`--exclude 通配符无法解析：${g}`);
+  }
 }
 
 function collectFromDir(root, opts, engine) {
@@ -154,7 +161,7 @@ async function gather(engine, opts) {
 
     if (st.isDirectory()) {
       const list = collectFromDir(abs, opts, engine);
-      for (const f of list) pushText(engine, bag, f.path, fs.readFileSync(f.full), opts);
+      for (const f of list) pushText(engine, bag, f.path, fs.readFileSync(f.full), opts); // nosec: 扫描目标就是使用者指定的路径
     } else if (/\.zip$/i.test(abs)) {
       const buf = fs.readFileSync(abs);
       const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
