@@ -1,7 +1,7 @@
 {
   "name": "sourceaudit",
-  "version": "1.0.0",
-  "description": "源码审计 CLI：跨行污点分析，331 条规则 / 26 类漏洞 / 8 种语言，支持目录、单文件与 ZIP（AWD/AWDP 场景适用）",
+  "version": "1.2.0",
+  "description": "源码审计 CLI、Node API 与忆涟千言 MCP 插件：跨行污点分析，331 条规则 / 26 类漏洞 / 8 种语言，支持目录、文件、ZIP 与代码片段",
   "keywords": [
     "awd",
     "awdp",
@@ -13,13 +13,17 @@
   ],
   "license": "MIT",
   "bin": {
-    "sourceaudit": "bin/sourceaudit.js"
+    "sourceaudit": "bin/sourceaudit.js",
+    "sourceaudit-mcp": "bin/sourceaudit-mcp.js"
   },
+  "main": "lib/scanner.js",
   "files": [
     "bin/",
     "lib/",
     "engine/",
     "scripts/",
+    "plugin/",
+    "docs/yilian-integration.md",
     "test/",
     "README.md",
     "LICENSE"
@@ -28,7 +32,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/run.js",
+    "test": "node test/run.js && npm run test:integration",
+    "test:integration": "node --test test/integration.test.js test/mcp.test.js test/package.test.js test/scanner.test.js test/flow.test.js test/zip.test.js test/mcp-session.test.js",
+    "mcp": "node bin/sourceaudit-mcp.js",
+    "package:yilian": "node scripts/package-yilian.js",
     "test:verbose": "node test/run.js -v",
     "sync-engine": "node scripts/sync-engine.js"
   },

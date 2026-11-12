@@ -7,11 +7,12 @@ on:
 
 jobs:
   test:
-    name: 回归自测 (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    name: 回归自测 (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest]
         node: ['18', '20', '22']
     steps:
       - uses: actions/checkout@v5

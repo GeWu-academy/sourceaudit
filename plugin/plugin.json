@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "yilian.sourceaudit",
+  "name": "源码审计 · Sourceaudit",
+  "version": "1.2.0",
+  "description": "本地源码审计，支持目录、文件、ZIP 和代码片段，提供污点来源与修复建议。配合 Sourceaudit MCP 服务使用。",
+  "publisher": "Sourceaudit",
+  "permissions": [],
+  "contributes": {
+    "skills": ["skills/sourceaudit/SKILL.md"],
+    "mcp_server_templates": [{
+      "name": "Sourceaudit 源码审计",
+      "description": "本地 stdio 服务；连接后提供路径扫描、代码片段审计与规则查询。",
+      "transport": "stdio",
+      "command": "sourceaudit-mcp",
+      "args": [],
+      "env": {}
+    }],
+    "features": [{
+      "id": "audit",
+      "title": "源码审计",
+      "description": "选择源码路径或粘贴代码，查看问题位置、输入来源与修复建议。",
+      "placements": ["more", "workspace"],
+      "target": {"kind": "skill", "contribution": "skills/sourceaudit/SKILL.md"}
+    }]
+  }
+}
