@@ -8,14 +8,15 @@
  * 用法：
  *   sourceaudit <目录|文件|.zip> [选项]
  *
- * 需要 Node.js >= 18（依赖 DecompressionStream / Blob / Response 解 zip）
+ * 需要 Node.js >= 18（Node zlib 解压 ZIP）
  */
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
 
-const { loadEngine, stats, DEFAULT_ENGINE } = require('../lib/engine');
+const { loadEngine, DEFAULT_ENGINE } = require('../lib/engine');
+const { scanPaths, getEngine } = require('../lib/scanner');
 const PKG = require('../package.json');
 
 /* ------------------------------------------------------------------ 参数解析 */
@@ -42,11 +43,13 @@ sourceaudit · 源码漏洞审计
       --no-color             关闭颜色
   -v, --version              版本
   -h, --help                 本帮助
+      --                     后续参数全部作为目标路径
 
 退出码
   0  未发现达到 --fail-on 级别的问题
   1  发现达到 --fail-on 级别的问题
   2  参数或运行错误
+  130 用户取消扫描（保留已完成部分）
 
 示例
   sourceaudit ./src
@@ -67,6 +70,7 @@ function parseArgs(argv) {
   };
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
+    if (v === '--') { a.targets.push(...argv.slice(i + 1)); break; }
     switch (v) {
       case '-h': case '--help': a.help = true; break;
       case '-v': case '--version': a.version = true; break;
@@ -91,96 +95,6 @@ function parseArgs(argv) {
   return a;
 }
 
-/* ------------------------------------------------------------------ 路径过滤 */
-
-const GLOB_MAX = 256;
-
-function globToRe(g) {
-  if (g.length > GLOB_MAX) throw new Error(`--exclude 通配符过长（${g.length} > ${GLOB_MAX}）：${g.slice(0, 40)}…`);
-  const s = g.replace(/\\/g, '/').replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '\u0000').replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '.').replace(/\u0000/g, '.*');
-  try {
-    return new RegExp(`^${s}$`); // nosec: 模式来自使用者的 --exclude，且已限长
-  } catch (e) {
-    throw new Error(`--exclude 通配符无法解析：${g}`);
-  }
-}
-
-function collectFromDir(root, opts, engine) {
-  const out = [];
-  const exRes = opts.exclude.map(globToRe);
-  const walk = (dir, rel) => {
-    let ents;
-    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
-    for (const ent of ents) {
-      const full = path.join(dir, ent.name);
-      const r = rel ? `${rel}/${ent.name}` : ent.name;
-      if (ent.name === '.DS_Store') continue;
-      if (exRes.some(re => re.test(r))) continue;
-      if (ent.isDirectory()) {
-        if (!opts.vendor && engine.SKIP_DIR.test(r + '/')) continue;
-        walk(full, r);
-      } else if (ent.isFile()) {
-        const ex = engine.extOf(r);
-        if (engine.SKIP_EXT[ex]) continue;
-        const lang = engine.langOf(r);
-        if (!lang) continue;
-        if (opts.lang && lang !== opts.lang) continue;
-        out.push({ path: r, full, lang });
-      }
-    }
-  };
-  walk(root, '');
-  return out;
-}
-
-/* ------------------------------------------------------------------ 文件读取 */
-
-const MAX_FILE = 3 * 1024 * 1024;
-
-function pushText(engine, bag, name, bytes, opts) {
-  const ex = engine.extOf(name);
-  if (engine.SKIP_EXT[ex]) return bag.skipped++;
-  const lang = engine.langOf(name);
-  if (!lang) return bag.skipped++;
-  if (opts.lang && lang !== opts.lang) return bag.skipped++;
-  if (bytes.length > MAX_FILE) return bag.skipped++;
-  const text = engine.decodeText(bytes);
-  if (text.indexOf('\u0000') >= 0) return bag.skipped++;
-  bag.files.push({ path: name, text, lang, size: bytes.length });
-  bag.added++;
-}
-
-async function gather(engine, opts) {
-  const bag = { files: [], added: 0, skipped: 0 };
-  for (const target of opts.targets) {
-    const abs = path.resolve(target);
-    let st;
-    try { st = fs.statSync(abs); } catch (e) { throw new Error(`路径不存在：${target}`); }
-
-    if (st.isDirectory()) {
-      const list = collectFromDir(abs, opts, engine);
-      for (const f of list) pushText(engine, bag, f.path, fs.readFileSync(f.full), opts); // nosec: 扫描目标就是使用者指定的路径
-    } else if (/\.zip$/i.test(abs)) {
-      const buf = fs.readFileSync(abs);
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      const entries = await engine.readZip(ab);
-      const exRes = opts.exclude.map(globToRe);
-      for (const e of entries) {
-        const p = e.name.replace(/\\/g, '/');
-        if (p.startsWith('__MACOSX/') || /(^|\/)\.DS_Store$/.test(p)) { bag.skipped++; continue; }
-        if (exRes.some(re => re.test(p))) { bag.skipped++; continue; }
-        if (!opts.vendor && engine.SKIP_DIR.test(p)) { bag.skipped++; continue; }
-        pushText(engine, bag, p, e.bytes, opts);
-      }
-    } else {
-      pushText(engine, bag, path.basename(abs), fs.readFileSync(abs), opts);
-    }
-  }
-  return bag;
-}
-
 /* ------------------------------------------------------------------ 输出 */
 
 const ANSI = { critical: '\x1b[91m', high: '\x1b[33m', medium: '\x1b[93m', low: '\x1b[36m' };
@@ -202,21 +116,25 @@ function renderText(findings, meta, paint) {
   L.push('');
 
   if (!findings.length) {
-    L.push(`  ${paint(GREEN, '✓ 未发现问题')}`);
-    L.push('');
-    return L.join('\n');
+    const message = meta.status === 'cancelled' ? '扫描已取消，以下为已完成部分'
+      : meta.status === 'partial' ? '扫描未完成，请查看诊断信息'
+      : !meta.files ? '未扫描到可分析的源码，请检查路径、语言和排除条件'
+      : '✓ 当前筛选条件下未发现问题';
+    L.push(`  ${paint(meta.status === 'complete' ? GREEN : DIM, message)}`);
   }
 
   for (const f of findings) {
     const loc = `${f.file}:${f.line}`;
-    const locStr = loc.length > 40 ? '…' + loc.slice(-39) : loc;
-    L.push(`  ${paint(ANSI[f.sev] || '', pad(f.sev.toUpperCase(), 9))}${pad(locStr, 41)}${paint(DIM, f.cat)}`);
+    const locStr = loc;
+    L.push(`  ${paint(ANSI[f.sev] || '', pad(f.sev.toUpperCase(), 9))}${pad(locStr, 41)} ${paint(DIM, f.cat)}`);
     L.push(`  ${' '.repeat(9)}${paint(BOLD, f.name)}`);
     if (f.code) L.push(paint(DIM, `  ${' '.repeat(9)}│ ${f.code.slice(0, 140)}`));
     if (f.source) {
       L.push(paint(DIM, `  ${' '.repeat(9)}└ 污点来源 L${f.source.line} ${f.source.label}` +
         (f.source.code ? ` · ${f.source.code.slice(0, 70)}` : '')));
     }
+    if (f.fix) L.push(`  ${' '.repeat(9)}└ 修复：${f.fix}`);
+    if (f.rule === 'awdpplus-lowconf') L.push(paint(DIM, `  ${' '.repeat(9)}└ 低置信：未追溯到输入来源，需结合上下文核实`));
     if (f.sanitized) L.push(paint(DIM, `  ${' '.repeat(9)}└ 已检测到净化处理，降级为 low`));
   }
 
@@ -268,61 +186,34 @@ async function main() {
 
   if (opts.help) { console.log(HELP); return 0; }
 
-  const engine = loadEngine(opts.engine);
+  const engine = opts.engine === DEFAULT_ENGINE ? getEngine() : loadEngine(opts.engine);
 
   if (opts.version) { console.log(`sourceaudit ${PKG.version} (engine ${engine.VERSION})`); return 0; }
   if (opts.listRules) { console.log(renderRules(engine)); return 0; }
 
   if (!opts.targets.length) { console.error(HELP); return 2; }
   if (!(opts.minSev in engine.SEV_ORDER)) throw new Error(`--min-sev 取值无效：${opts.minSev}`);
-  if (opts.failOn !== 'none' && !(opts.failOn in engine.SEV_ORDER)) throw new Error(`--fail-on 取值无效：${opts.failOn}`);
+  if (opts.failOn !== 'none' && !Object.hasOwn(engine.SEV_ORDER, opts.failOn)) throw new Error(`--fail-on 取值无效：${opts.failOn}`);
   if (!['text', 'json'].includes(opts.format)) throw new Error(`--format 取值无效：${opts.format}`);
 
-  const t0 = Date.now();
-  const bag = await gather(engine, opts);
-
-  const raw = [];
-  for (const f of bag.files) {
-    try {
-      const res = engine.analyzeText(f.path, f.text, f.lang, { lowConfidence: opts.lowconf });
-      for (const r of res) raw.push(r);
-    } catch (e) {
-      if (!opts.quiet) console.error(`  ! 分析失败 ${f.path}: ${e.message}`);
-    }
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  process.once('SIGINT', cancel);
+  let report, lastUpdate = 0;
+  try {
+    report = await scanPaths(opts.targets, { ...opts, signal: controller.signal, onProgress(update) {
+      if (!process.stderr.isTTY || opts.quiet || Date.now() - lastUpdate < 150) return;
+      lastUpdate = Date.now();
+      process.stderr.write(`\r扫描中：${update.files} 个文件，跳过 ${update.skipped} 个`);
+    } });
+  } finally {
+    process.removeListener('SIGINT', cancel);
+    if (lastUpdate) process.stderr.write('\n');
   }
-
-  const minOrder = engine.SEV_ORDER[opts.minSev];
-  const findings = raw
-    .filter(f => engine.SEV_ORDER[f.sev] <= minOrder)
-    .filter(f => !opts.cats || opts.cats.includes(f.cat))
-    .sort((a, b) => {
-      const d = engine.SEV_ORDER[a.sev] - engine.SEV_ORDER[b.sev];
-      if (d) return d;
-      if (a.file !== b.file) return a.file < b.file ? -1 : 1;
-      return a.line - b.line;
-    });
-
-  const summary = { critical: 0, high: 0, medium: 0, low: 0, total: findings.length };
-  for (const f of findings) summary[f.sev] = (summary[f.sev] || 0) + 1;
-
-  const langCount = {};
-  for (const f of bag.files) langCount[f.lang] = (langCount[f.lang] || 0) + 1;
-  const langStr = Object.keys(langCount)
-    .sort((a, b) => langCount[b] - langCount[a])
-    .map(l => `${engine.LANG_LABEL[l] || l}×${langCount[l]}`).join(' ') || '无可扫描文件';
-
-  const meta = {
-    tool: 'sourceaudit',
-    version: PKG.version,
-    engine_version: engine.VERSION,
-    engine: opts.engine,
-    targets: opts.targets,
-    files: bag.files.length,
-    skipped: bag.skipped,
-    langStr,
-    elapsed_ms: Date.now() - t0,
-    summary
-  };
+  if (report.status === 'cancelled') console.error('  扫描已取消，报告仅包含已完成部分。');
+  const { findings, summary, ...metadata } = report;
+  const meta = { ...metadata, summary };
+  for (const diagnostic of report.diagnostics) console.error(`  ! ${diagnostic.file}: ${diagnostic.message}`);
 
   const useColor = opts.color === null ? (process.stdout.isTTY && !process.env.NO_COLOR) : opts.color;
   const paint = makePainter(useColor);
@@ -331,25 +222,28 @@ async function main() {
   if (opts.format === 'json') {
     output = JSON.stringify({ ...meta, findings }, null, 2);
   } else if (opts.quiet) {
-    output = `sourceaudit: ${bag.files.length} 文件 · 严重 ${summary.critical} 高危 ${summary.high} ` +
+    output = `sourceaudit: ${meta.files} 文件 · 严重 ${summary.critical} 高危 ${summary.high} ` +
       `中危 ${summary.medium} 低危 ${summary.low} · ${meta.elapsed_ms}ms`;
   } else {
     output = renderText(findings, meta, paint);
   }
 
-  console.log(output);
+  process.stdout.write(output.endsWith('\n') ? output : output + '\n');
   if (opts.out) {
-    fs.writeFileSync(opts.out, output.endsWith('\n') ? output : output + '\n', 'utf8');
+    const plain = output.replace(/\x1b\[[0-9;]*m/g, '');
+    fs.writeFileSync(opts.out, plain.endsWith('\n') ? plain : plain + '\n', 'utf8'); // nosec: --out 是用户明确选择的报告输出路径
     if (!opts.quiet) console.error(`  已写入 ${opts.out}`);
   }
 
+  if (report.status === 'cancelled') return 130;
+  if (report.status === 'partial') return 2;
   if (opts.failOn === 'none') return 0;
   const failOrder = engine.SEV_ORDER[opts.failOn];
   const hit = findings.some(f => engine.SEV_ORDER[f.sev] <= failOrder);
   return hit ? 1 : 0;
 }
 
-main().then(code => process.exit(code)).catch(err => {
+main().then(code => { process.exitCode = code; }).catch(err => {
   console.error(`sourceaudit: ${err.message}`);
-  process.exit(2);
+  process.exitCode = 2;
 });

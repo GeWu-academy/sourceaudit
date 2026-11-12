@@ -61,7 +61,7 @@ function resolveSource(arg) {
 
 function writeMeta(sourceDir, sourceFile, hash, info) {
   // 只记相对信息，避免把本机绝对路径写进仓库
-  fs.writeFileSync(META, JSON.stringify({
+  fs.writeFileSync(META, JSON.stringify({ // nosec: META 是仓库内固定元信息路径
     source_package: path.basename(sourceDir),
     source_engine: path.relative(sourceDir, sourceFile).split(path.sep).join('/'),
     source_sha256: hash,
@@ -153,9 +153,12 @@ function main() {
   console.log(`\n已更新 ${path.relative(ROOT, DEFAULT_ENGINE)}，元信息写入 ${path.relative(ROOT, META)}。`);
 
   if (flags.test) {
-    console.log('\n跑回归语料…');
+    console.log('\n跑回归语料与适配测试…');
     try {
       execFileSync(process.execPath, [path.join(ROOT, 'test', 'run.js')], { stdio: 'inherit' }); // nosec: 常量路径，数组传参不起 shell
+      const tests = fs.readdirSync(path.join(ROOT, 'test')).filter(name => name.endsWith('.test.js'))
+        .map(name => path.join(ROOT, 'test', name));
+      execFileSync(process.execPath, ['--test', ...tests], { stdio: 'inherit' }); // nosec: 仓库内测试文件，无 shell
     } catch (_) {
       console.error('\n回归未通过 —— 新引擎有问题，或语料需要更新。用 git 回滚 engine/ 后排查。');
       return 1;
